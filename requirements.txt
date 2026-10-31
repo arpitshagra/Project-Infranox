@@ -2,3 +2,5 @@ ultralytics
 opencv-python
 streamlit
 lapx
+pandas
+pyyaml

@@ -1,0 +1,11 @@
+# Pothole-Tuned ByteTrack configuration for vehicle dashcam footage
+# Reduces track_buffer and tightens match_thresh to prevent lost tracks from hijacking new potholes down the road.
+
+tracker_type: bytetrack
+track_high_thresh: 0.20 # First stage detection threshold
+track_low_thresh: 0.10  # Second stage threshold
+new_track_thresh: 0.20  # Threshold to initialize new pothole tracks
+track_buffer: 6         # Frames to keep lost tracks alive (shortened for moving vehicles)
+match_thresh: 0.50      # Stricter association similarity threshold
+fuse_score: True
+

@@ -1,20 +1,30 @@
-# Project Infranox - AI Pothole Detection & Tracking System 🚧
+# Project Infranox - AI Pothole Detection, Tracking & Road Quality Ranking 🚧
 
-An intelligent computer vision system for road asset and road surface monitoring. It uses **YOLO** for real-time pothole detection and **ByteTrack / BoT-SORT** multi-object tracking to eliminate duplicate pothole counts across video frames.
+An intelligent computer vision system for road asset and road surface monitoring. It uses **YOLO** for high-accuracy pothole detection, specialized directional tracking to assign persistent IDs to every unique physical pothole, exports structured CSV inspection logs, and ranks road quality using civil engineering pavement condition metrics.
 
 ---
 
-## ✨ Features
+## ✨ Key Capabilities
 
-- **Real-Time Pothole Detection:** Powered by a customized YOLO model (`best.pt`).
-- **Unique Multi-Object Tracking:** Uses **ByteTrack / BoT-SORT** algorithms to assign persistent IDs to each pothole, ensuring a single physical pothole is counted **only once** as a vehicle drives past.
+- **Unique Physical Pothole Tracking:** 
+  - Prevents double-counting by following each pothole across video frames under a persistent ID.
+  - Directional forward-motion gating ensures old potholes that have rolled behind the vehicle are closed and never hijack new potholes down the road.
+  - Option to choose between the **Road-Aware Flow Tracker**, **Pothole-Tuned ByteTrack**, and **BoT-SORT**.
+- **Structured CSV Export:**
+  - Automatically exports all detected pothole IDs with exact timestamps, frames, bounding box dimensions, surface area ($px^2$), confidence score, and severity classification.
+- **Road Quality Profiling & Ranking:**
+  - Evaluates and ranks road segments based on:
+    - **Pavement Health Score (0–100):** Comprehensive condition score.
+    - **Pothole Density:** Frequency of potholes per minute of driving.
+    - **Severity Distribution:** Breakdown of Severe, Moderate, and Minor potholes.
+    - **Cumulative Surface Damage Area ($px^2$).**
+    - **Maintenance Urgency:** Actionable recommendations (Emergency Intervention, Priority Repair, Scheduled Repair, Routine Monitoring).
+  - **Dynamic Road Ranking Leaderboard:** Compare multiple roads, sort by worst-to-best or best-to-worst, view bar charts, and export the leaderboard CSV.
+- **Single & Batch Image Inspection:**
+  - Upload road photos (`.jpg`, `.png`, `.jpeg`) to detect, count, and crop every individual pothole in the scene.
 - **Interactive Streamlit Web Dashboard:**
-  - Drag-and-drop video upload (`.mp4`, `.avi`, `.mov`, `.mkv`) or select workspace videos.
-  - **Frame Range Adjustment (Trimming):** Select specific sections/timeframes of video to inspect.
-  - **Frame Sampling (Frame Skip):** Process every $N$-th frame (e.g. 2x to 10x faster) to efficiently process long road videos with minimal computing power.
-  - **Real-Time Live Video Display:** Displays detections, bounding boxes, and active tracking IDs on screen.
-  - **Export Capabilities:** Download annotated output video with bounding boxes and track IDs, export a structured CSV catalog, and view a snapshot gallery of detected potholes.
-- **Standalone CLI / Webcam Script (`test.py`):** For direct terminal usage or live webcam detection.
+  - Frame range trimming slider, adjustable frame skip (1x–10x), detection confidence slider, IoU threshold slider, and inference resolution options (640, 960, 1280).
+  - Close-up cropped gallery of each detected pothole.
 
 ---
 
@@ -22,12 +32,16 @@ An intelligent computer vision system for road asset and road surface monitoring
 
 ```text
 Project-Infranox/
-├── app.py                # Streamlit web frontend with unique tracking & frame controls
-├── test.py               # Standalone Python script for video/webcam detection
+├── app.py                # Streamlit web dashboard with detection, tracking, CSV export & road ranking
+├── test.py               # Standalone CLI / webcam script with CSV logging & road profiling
+├── tracker.py            # Road-Aware Directional Tracker & Pavement Condition scoring engine
 ├── best.pt               # Pretrained YOLO pothole detection model weights
-├── requirements.txt      # Python dependencies (ultralytics, opencv, streamlit, lapx)
+├── requirements.txt      # Python dependencies (ultralytics, opencv, streamlit, pandas, lapx)
+├── trackers/             # Tuned tracker configurations
+│   ├── pothole_bytetrack.yaml
+│   └── pothole_botsort.yaml
 ├── .streamlit/           # Streamlit configuration
-├── .gitignore            # Git ignore rules (filters out large video binaries)
+├── .gitignore            # Git ignore rules
 └── README.md             # Project documentation
 ```
 
@@ -36,7 +50,6 @@ Project-Infranox/
 ## 🚀 Quick Start
 
 ### 1. Installation
-Clone this repository and install the required dependencies:
 ```bash
 git clone https://github.com/arpitshagra/Project-Infranox.git
 cd Project-Infranox
@@ -44,25 +57,21 @@ pip install -r requirements.txt
 ```
 
 ### 2. Launch the Web UI
-Run the interactive Streamlit dashboard:
 ```bash
 streamlit run app.py
 ```
 Open your browser at `http://localhost:8501`.
 
 ### 3. Run Standalone Script
-To run pothole detection directly in the terminal on a video or webcam:
 ```bash
 python test.py
 ```
-*(To use live webcam instead of video, edit `test.py` and set `video_source = 0`)*
+*(Automatically processes road video/webcam, prints road health metrics, and generates `potholes_catalog.csv` and `road_assessment.csv`)*
 
 ---
 
 ## 🛠️ Tech Stack
 - **Model:** YOLO (Ultralytics)
-- **Tracking:** ByteTrack & BoT-SORT
+- **Tracking:** Road-Aware Directional Flow MOT, ByteTrack, BoT-SORT
 - **UI:** Streamlit
-- **Computer Vision:** OpenCV (cv2)
-- **Core:** Python, PyTorch
-
+- **Analytics & Data:** Pandas, NumPy, OpenCV
