@@ -1,3 +1,4 @@
+import { apiUrl } from './api';
 import React, { useState, useEffect } from 'react';
 import Navbar from './components/Navbar';
 import Home from './pages/Home';
@@ -36,7 +37,7 @@ export default function App() {
   }, []);
 
   const fetchStats = () => {
-    fetch('/api/stats')
+    fetch(apiUrl('/api/stats'))
       .then(res => res.json())
       .then(data => {
         setStats(data);

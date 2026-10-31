@@ -1,3 +1,4 @@
+import { apiUrl } from '../api';
 import React, { useState, useEffect } from 'react';
 import { 
   FileSpreadsheet, 
@@ -14,7 +15,7 @@ export default function Reports() {
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    fetch('/api/roads')
+    fetch(apiUrl('/api/roads'))
       .then(res => res.json())
       .then(data => setRoads(data))
       .catch(err => console.log('Error loading roads:', err));
@@ -41,14 +42,14 @@ export default function Reports() {
 
         <div className="flex items-center gap-3">
           <a
-            href="/api/reports/potholes.csv"
+            href={apiUrl('/api/reports/potholes.csv')}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition shadow-sm"
           >
             <Download className="w-4 h-4" />
             Download Pothole Catalog CSV
           </a>
           <a
-            href="/api/reports/roads.csv"
+            href={apiUrl('/api/reports/roads.csv')}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition shadow-sm"
           >
             <Download className="w-4 h-4" />

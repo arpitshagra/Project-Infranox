@@ -1,3 +1,4 @@
+import { apiUrl } from '../api';
 import React, { useState, useEffect } from 'react';
 import { 
   MapContainer, 
@@ -103,7 +104,7 @@ export default function RoadMap() {
   const [healthScore, setHealthScore] = useState(78);
 
   const fetchRoads = () => {
-    fetch('/api/roads')
+    fetch(apiUrl('/api/roads'))
       .then(r => r.json())
       .then(d => setRoads(d))
       .catch(err => console.log('Error fetching roads:', err));
@@ -116,7 +117,7 @@ export default function RoadMap() {
   const handleMapClick = async (lat, lng) => {
     if (clickStep === 'origin') {
       try {
-        const rev = await fetch(`/api/reverse-geocode?lat=${lat}&lon=${lng}`).then(r => r.json());
+        const rev = await fetch(apiUrl(`/api/reverse-geocode?lat=${lat}&lon=${lng}`).then(r => r.json());
         setClickOrigin({ lat, lon: lng, address: rev.address });
         setClickStep('dest');
       } catch {
@@ -126,11 +127,11 @@ export default function RoadMap() {
     } else if (clickStep === 'dest') {
       setIsRouting(true);
       try {
-        const rev = await fetch(`/api/reverse-geocode?lat=${lat}&lon=${lng}`).then(r => r.json());
+        const rev = await fetch(apiUrl(`/api/reverse-geocode?lat=${lat}&lon=${lng}`).then(r => r.json());
         const dest = { lat, lon: lng, address: rev.address };
         setClickDest(dest);
 
-        const res = await fetch(`/api/route?start_lat=${clickOrigin.lat}&start_lon=${clickOrigin.lon}&end_lat=${lat}&end_lon=${lng}`);
+        const res = await fetch(apiUrl(`/api/route?start_lat=${clickOrigin.lat}&start_lon=${clickOrigin.lon}&end_lat=${lat}&end_lon=${lng}`);
         const data = await res.json();
         setRouteResult(data);
         setClickStep('done');
@@ -152,7 +153,7 @@ export default function RoadMap() {
     if (!searchQuery.trim()) return;
     setIsGeocoding(true);
     try {
-      const res = await fetch(`/api/geocode?q=${encodeURIComponent(searchQuery)}`);
+      const res = await fetch(apiUrl(`/api/geocode?q=${encodeURIComponent(searchQuery)}`);
       const data = await res.json();
       if (res.ok && data.lat) {
         setMapCenter([data.lat, data.lon]);
@@ -175,13 +176,13 @@ export default function RoadMap() {
   const handleQuickPreset = (origQuery, destQuery) => {
     setIsRouting(true);
     Promise.all([
-      fetch(`/api/geocode?q=${encodeURIComponent(origQuery)}`).then(r => r.json()),
-      fetch(`/api/geocode?q=${encodeURIComponent(destQuery)}`).then(r => r.json())
+      fetch(apiUrl(`/api/geocode?q=${encodeURIComponent(origQuery)}`).then(r => r.json()),
+      fetch(apiUrl(`/api/geocode?q=${encodeURIComponent(destQuery)}`).then(r => r.json())
     ]).then(([orig, dest]) => {
       setClickOrigin(orig);
       setClickDest(dest);
       setMapCenter([orig.lat, orig.lon]);
-      return fetch(`/api/route?start_lat=${orig.lat}&start_lon=${orig.lon}&end_lat=${dest.lat}&end_lon=${dest.lon}`)
+      return fetch(apiUrl(`/api/route?start_lat=${orig.lat}&start_lon=${orig.lon}&end_lat=${dest.lat}&end_lon=${dest.lon}`)
         .then(r => r.json())
         .then(data => {
           setRouteResult(data);

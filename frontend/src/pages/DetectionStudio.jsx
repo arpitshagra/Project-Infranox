@@ -1,3 +1,4 @@
+import { apiUrl } from '../api';
 import React, { useState, useEffect } from 'react';
 import { 
   Video, 
@@ -44,7 +45,7 @@ export default function DetectionStudio({ onSurveyComplete }) {
 
   useEffect(() => {
     // Load local videos from API
-    fetch('/api/videos/local')
+    fetch(apiUrl('/api/videos/local'))
       .then(res => res.json())
       .then(data => {
         setLocalVideos(data);
@@ -76,7 +77,7 @@ export default function DetectionStudio({ onSurveyComplete }) {
     formData.append('imgsz', imgsz);
 
     try {
-      const res = await fetch('/api/detect/video', {
+      const res = await fetch(apiUrl('/api/detect/video'), {
         method: 'POST',
         body: formData
       });
@@ -108,7 +109,7 @@ export default function DetectionStudio({ onSurveyComplete }) {
     formData.append('imgsz', imgsz);
 
     try {
-      const res = await fetch('/api/detect/image', {
+      const res = await fetch(apiUrl('/api/detect/image'), {
         method: 'POST',
         body: formData
       });
@@ -404,7 +405,7 @@ export default function DetectionStudio({ onSurveyComplete }) {
 
                 <div className="flex items-center gap-2">
                   <a
-                    href="/api/reports/potholes.csv"
+                    href={apiUrl('/api/reports/potholes.csv')}
                     className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition"
                   >
                     <Download className="w-3.5 h-3.5" />

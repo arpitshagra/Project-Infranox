@@ -3,9 +3,16 @@
   "outputDirectory": "frontend/dist",
   "rewrites": [
     {
+      "source": "/api/:path*",
+      "destination": "https://project-infranox.onrender.com/api/:path*"
+    },
+    {
+      "source": "/static/:path*",
+      "destination": "https://project-infranox.onrender.com/static/:path*"
+    },
+    {
       "source": "/(.*)",
       "destination": "/"
     }
   ]
 }
-

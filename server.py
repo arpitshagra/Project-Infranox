@@ -120,6 +120,17 @@ def np_image_to_base64(img_bgr, quality=85):
 # 1. SYSTEM HEALTH & DASHBOARD STATS
 # =========================================================================
 
+@app.get("/")
+def root():
+    return {
+        "service": "INFRANOX AI - Road Intelligence Platform API",
+        "status": "online",
+        "version": "2.0.0",
+        "health": "/api/health",
+        "docs": "/docs"
+    }
+
+
 @app.get("/api/health")
 def health_check():
     model = get_yolo()

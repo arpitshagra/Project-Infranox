@@ -1,3 +1,4 @@
+import { apiUrl } from '../api';
 import React, { useState, useEffect } from 'react';
 import { 
   Trophy, 
@@ -15,7 +16,7 @@ export default function RoadIntelligence({ stats }) {
   const [sortBy, setSortBy] = useState('urgent'); // 'urgent' | 'best' | 'potholes'
 
   useEffect(() => {
-    fetch('/api/roads')
+    fetch(apiUrl('/api/roads'))
       .then(res => res.json())
       .then(data => setRoads(data))
       .catch(err => console.log('Error loading roads:', err));
@@ -64,7 +65,7 @@ export default function RoadIntelligence({ stats }) {
           </div>
 
           <a
-            href="/api/reports/roads.csv"
+            href={apiUrl('/api/reports/roads.csv')}
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition shadow-sm"
           >
             <Download className="w-3.5 h-3.5" />

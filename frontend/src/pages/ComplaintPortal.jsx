@@ -1,3 +1,4 @@
+import { apiUrl } from '../api';
 import React, { useState, useEffect } from 'react';
 import { 
   AlertCircle, 
@@ -23,7 +24,7 @@ export default function ComplaintPortal() {
   const [successTicket, setSuccessTicket] = useState(null);
 
   const fetchComplaints = () => {
-    fetch('/api/complaints')
+    fetch(apiUrl('/api/complaints'))
       .then(res => res.json())
       .then(data => setComplaints(data))
       .catch(err => console.log('Error loading complaints:', err));
@@ -50,7 +51,7 @@ export default function ComplaintPortal() {
     setSuccessTicket(null);
 
     try {
-      const res = await fetch('/api/complaints', {
+      const res = await fetch(apiUrl('/api/complaints'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -81,7 +82,7 @@ export default function ComplaintPortal() {
 
   const handleUpdateStatus = async (complaintId, newStatus) => {
     try {
-      const res = await fetch(`/api/complaints/${complaintId}`, {
+      const res = await fetch(apiUrl(`/api/complaints/${complaintId}`), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus })
