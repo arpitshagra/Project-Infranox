@@ -1,0 +1,2 @@
+Road Name,Health Score (0-100),Condition Rating,Maintenance Urgency,Urgency Level,Total Potholes,Severe Potholes,Moderate Potholes,Minor Potholes,Pothole Density (/min),Total Damaged Area (px²),Avg Confidence,Duration (s),Frames Evaluated
+road2,0.0,Critical (Hazardous),Emergency Intervention,5,1389,1362,15,12,1384.3,199383144,0.44,60.2,7221

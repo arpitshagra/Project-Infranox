@@ -4,3 +4,7 @@ streamlit
 lapx
 pandas
 pyyaml
+folium
+streamlit-folium
+geopy
+requests

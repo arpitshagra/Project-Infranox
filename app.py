@@ -7,6 +7,8 @@ import pandas as pd
 import streamlit as st
 from ultralytics import YOLO
 from tracker import RoadPotholeTracker
+from streamlit_folium import st_folium
+import map_service
 
 # Page Configuration
 st.set_page_config(
@@ -72,9 +74,21 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ----------------- Session State for Road Rankings -----------------
+# ----------------- Session State for Road Rankings & Interactive Map -----------------
 if "road_registry" not in st.session_state:
     st.session_state["road_registry"] = []
+
+if "map_roads" not in st.session_state:
+    st.session_state["map_roads"] = map_service.load_community_roads()
+
+if "active_route" not in st.session_state:
+    st.session_state["active_route"] = None
+
+if "origin_info" not in st.session_state:
+    st.session_state["origin_info"] = None
+
+if "dest_info" not in st.session_state:
+    st.session_state["dest_info"] = None
 
 # ----------------- Helper Functions -----------------
 @st.cache_resource
@@ -182,17 +196,17 @@ with st.sidebar:
     min_hits = st.slider(
         "Minimum Track Detections (Min Hits)",
         min_value=1,
-        max_value=5,
-        value=1,
-        help="1 = Count every detected pothole (never drop any pothole).\n2+ = Require 2+ frames to filter single-frame flickers."
+        max_value=6,
+        value=3,
+        help="3+ (Recommended) = Ensures only genuine potholes tracked across multiple frames are counted, eliminating flickers and duplicates.\n1 = Unfiltered (counts single-frame detections)."
     )
 
     frame_step = st.slider(
         "Process Every Nth Frame (Frame Skip)",
         min_value=1,
         max_value=10,
-        value=2,
-        help="1 = Full fidelity.\n2 = 2x faster (recommended for dashcam video).\n5+ = Faster overview."
+        value=1,
+        help="1 = Full frame fidelity (Recommended for highest tracking accuracy without losing pothole continuity).\n2 = 2x faster.\n5+ = Fast rough overview."
     )
 
     save_annotated_video = st.checkbox(
@@ -203,8 +217,13 @@ with st.sidebar:
 
 # ----------------- Mode Selection -----------------
 media_mode = st.radio(
-    "Choose Media Input Type:",
-    options=["Video Analysis & Road Ranking", "Single / Batch Image Inspection", "Road Ranking Leaderboard"],
+    "Choose Studio Mode:",
+    options=[
+        "Video Analysis & Road Ranking",
+        "Single / Batch Image Inspection",
+        "Road Ranking Leaderboard",
+        "🗺️ Live Road Map & Route Planner"
+    ],
     horizontal=True
 )
 
@@ -327,7 +346,10 @@ if media_mode == "Single / Batch Image Inspection":
 # MODE 2: VIDEO ANALYSIS & ROAD RANKING
 # =========================================================================
 elif media_mode == "Video Analysis & Road Ranking":
-    col_vmode, col_rname = st.columns([2, 1])
+    st.markdown("### 🎥 Road Video Survey & Automated Surface Profiling")
+    st.info("Upload road dashcam video, specify the Start (Origin) and End (Destination) points. Infranox will automatically track all unique potholes, compute the road's Pavement Health Score, and plot it on the community map for future travelers!")
+
+    col_vmode, col_rname = st.columns([1, 1])
     with col_vmode:
         video_source_mode = st.radio(
             "Choose Video Source:",
@@ -335,7 +357,23 @@ elif media_mode == "Video Analysis & Road Ranking":
             horizontal=True
         )
     with col_rname:
-        custom_road_name = st.text_input("Road / Sector Name (for Ranking):", value="", placeholder="e.g. NH-44 Sector 2")
+        custom_road_name = st.text_input("Road / Route Name:", value="", placeholder="e.g. NH-44 Expressway Sector 1")
+
+    # Mandatory survey start and end points for automated community road mapping
+    col_start, col_end = st.columns(2)
+    with col_start:
+        survey_start_point = st.text_input(
+            "📍 Survey Start Point (Boarding / Origin):",
+            value="Connaught Place, New Delhi",
+            placeholder="e.g. Connaught Place, New Delhi (or street/city)"
+        )
+    with col_end:
+        survey_end_point = st.text_input(
+            "🏁 Survey End Point (Destination):",
+            value="India Gate, New Delhi",
+            placeholder="e.g. India Gate, New Delhi (or street/city)"
+        )
+    st.caption("ℹ️ Entering the Start & End points automatically plots this road corridor on the live OpenStreetMap network so other travelers can see the road score before traveling.")
 
     active_video_path = None
     temp_file_path = None
@@ -445,9 +483,9 @@ elif media_mode == "Video Analysis & Road Ranking":
                     
                     if tracker_mode == "Road-Aware Flow Tracker (Recommended)":
                         road_tracker = RoadPotholeTracker(
-                            iou_thresh=iou_thresh * 0.5,
-                            max_dist=140,
-                            max_lost_frames=max(3, 8 // frame_step),
+                            iou_thresh=0.15,
+                            max_dist=180,
+                            max_lost_frames=max(8, 16 // frame_step),
                             min_hits=min_hits
                         )
                     elif tracker_mode == "Pothole-Tuned ByteTrack":
@@ -493,18 +531,18 @@ elif media_mode == "Video Analysis & Road Ranking":
                             )
                             boxes = results[0].boxes
                             num_dets = len(boxes)
-                            raw_frame_detections_count += num_dets
 
                             if num_dets > 0:
                                 xyxy = boxes.xyxy.cpu().numpy().tolist()
                                 confs = [round(float(c), 2) for c in boxes.conf.cpu().tolist()]
                                 
-                                assigned_ids = road_tracker.update(
+                                clean_dets, clean_confs, assigned_ids = road_tracker.update(
                                     xyxy, confs, frame, annotated_frame, current_idx, timestamp_sec
                                 )
                                 current_active_ids = assigned_ids
+                                raw_frame_detections_count += len(clean_dets)
 
-                                for box, tid, conf in zip(xyxy, assigned_ids, confs):
+                                for box, tid, conf in zip(clean_dets, assigned_ids, clean_confs):
                                     color = color_palette[tid % len(color_palette)]
                                     label = f"Pothole #{tid} ({conf:.2f})"
                                     draw_pothole_box(annotated_frame, box, label, color=color, thickness=2)
@@ -638,10 +676,34 @@ elif media_mode == "Video Analysis & Road Ranking":
                     else:
                         st.session_state["road_registry"].append(road_profile)
 
+                    # Automatically register road survey to OpenStreetMap community database
+                    survey_entry = None
+                    if survey_start_point.strip() and survey_end_point.strip():
+                        with st.spinner("🗺️ Geocoding and plotting surveyed road onto live OpenStreetMap network..."):
+                            survey_entry, updated_roads = map_service.register_video_survey_road(
+                                road_name=custom_road_name,
+                                start_query=survey_start_point,
+                                end_query=survey_end_point,
+                                health_score=road_profile['Health Score (0-100)'],
+                                condition_rating=road_profile['Condition Rating'],
+                                urgency=road_profile['Maintenance Urgency'],
+                                unique_pothole_records=unique_pothole_records,
+                                video_duration_sec=effective_duration_sec
+                            )
+                            st.session_state["map_roads"] = updated_roads
+
                     # ----------------- Road Health Profile Display -----------------
                     st.markdown("---")
                     st.header(f"🛣️ Road Quality Assessment: `{custom_road_name}`")
                     
+                    if survey_entry:
+                        st.success(
+                            f"🗺️ **Road Automatically Mapped on OpenStreetMap!** `{custom_road_name}` "
+                            f"(Health Score: **{road_profile['Health Score (0-100)']}/100**, {road_profile['Condition Rating']}) "
+                            f"is now plotted on the live network with {len(survey_entry['potholes'])} pothole pins. "
+                            f"Future travelers selecting routes along this corridor will be notified of this road's score!"
+                        )
+
                     rcol1, rcol2, rcol3, rcol4 = st.columns(4)
                     rcol1.metric("Pavement Health Score", f"{road_profile['Health Score (0-100)']}/100")
                     rcol2.metric("Condition Rating", f"{road_profile['Condition Rating']}")
@@ -651,6 +713,12 @@ elif media_mode == "Video Analysis & Road Ranking":
                     st.markdown("**Road Condition Gauge:**")
                     score_val = road_profile['Health Score (0-100)']
                     st.progress(score_val / 100.0, text=f"Health Score: {score_val}% ({road_profile['Condition Rating']})")
+
+                    # Live Mini-Map Preview of the surveyed road
+                    if survey_entry:
+                        st.markdown("**🗺️ Surveyed Road Map Preview:**")
+                        mini_map = map_service.build_road_quality_map([survey_entry], zoom=14)
+                        st_folium(mini_map, width="100%", height=340, returned_objects=[])
 
                     st.markdown("---")
                     st.subheader("📊 Pothole Severity & Defect Breakdown")
@@ -722,6 +790,63 @@ elif media_mode == "Video Analysis & Road Ranking":
                                 use_container_width=True
                             )
 
+                    # Option to pin evaluated road to the interactive map
+                    with st.expander("📍 Pin this Evaluated Road to the Live Interactive Map"):
+                        st.caption(f"Plot **{custom_road_name}** (Score: {road_profile['Health Score (0-100)']}/100) onto the OpenStreetMap network:")
+                        m_col1, m_col2 = st.columns(2)
+                        with m_col1:
+                            v_start = st.text_input("Segment Start Point (Address or Lat, Lon):", value="", key="vid_start_map", placeholder="e.g. Connaught Place or 28.6328, 77.2197")
+                        with m_col2:
+                            v_end = st.text_input("Segment End Point (Address or Lat, Lon):", value="", key="vid_end_map", placeholder="e.g. India Gate or 28.6129, 77.2295")
+
+                        if st.button("📍 Add to Live Map Network", key="btn_add_vid_map"):
+                            if not v_start.strip() or not v_end.strip():
+                                st.warning("Please provide both Start and End locations.")
+                            else:
+                                def parse_loc(txt):
+                                    if "," in txt and all(part.strip().replace(".", "").replace("-", "").isdigit() for part in txt.split(",")):
+                                        p = txt.split(",")
+                                        return float(p[0]), float(p[1])
+                                    loc = map_service.geocode_location(txt)
+                                    return (loc[0], loc[1]) if loc else None
+
+                                p1 = parse_loc(v_start)
+                                p2 = parse_loc(v_end)
+                                if p1 and p2:
+                                    r_color = "#22C55E" if road_profile['Health Score (0-100)'] >= 70 else ("#EAB308" if road_profile['Health Score (0-100)'] >= 50 else "#EF4444")
+                                    poly = map_service.get_osrm_route(p1[0], p1[1], p2[0], p2[1])
+                                    coords = poly["coordinates"] if (poly and poly.get("coordinates")) else [[p1[0], p1[1]], [p2[0], p2[1]]]
+                                    
+                                    # Create sample pothole geo-markers along the road segment for each detected pothole
+                                    pothole_pins = []
+                                    num_p = len(unique_pothole_records)
+                                    if coords and num_p > 0:
+                                        step_idx = max(1, len(coords) // (num_p + 1))
+                                        for p_i, p_rec in enumerate(sorted(unique_pothole_records.values(), key=lambda x: x["track_id"])):
+                                            c_idx = min(len(coords) - 1, (p_i + 1) * step_idx)
+                                            pothole_pins.append({
+                                                "id": p_rec["track_id"],
+                                                "lat": coords[c_idx][0],
+                                                "lon": coords[c_idx][1],
+                                                "severity": p_rec.get("severity", "Moderate"),
+                                                "conf": p_rec["max_conf"],
+                                                "area": p_rec.get("max_area", 2000)
+                                            })
+
+                                    st.session_state["map_roads"].append({
+                                        "road_name": custom_road_name,
+                                        "rating": road_profile["Condition Rating"],
+                                        "health_score": road_profile["Health Score (0-100)"],
+                                        "color": r_color,
+                                        "urgency": road_profile["Maintenance Urgency"],
+                                        "potholes_count": len(unique_pothole_records),
+                                        "coordinates": coords,
+                                        "potholes": pothole_pins
+                                    })
+                                    st.success(f"✅ Plotted '{custom_road_name}' with {len(pothole_pins)} pothole markers on the map! Switch to '🗺️ Live Road Map & Route Planner' to view.")
+                                else:
+                                    st.error("Could not geocode locations. Please verify addresses or enter latitude, longitude.")
+
                     # ----------------- Unique Potholes Gallery -----------------
                     if unique_pothole_records:
                         st.markdown("---")
@@ -748,7 +873,7 @@ elif media_mode == "Video Analysis & Road Ranking":
 # =========================================================================
 # MODE 3: ROAD RANKING LEADERBOARD
 # =========================================================================
-else:
+elif media_mode == "Road Ranking Leaderboard":
     st.markdown("### 🏆 Comprehensive Road Quality Ranking Leaderboard")
     st.info("Ranks all analyzed road segments based on Pavement Health Score, Pothole Density, Severity Distribution, and Repair Urgency.")
 
@@ -813,3 +938,183 @@ else:
         - **Pavement Health Score (0–100):** Comprehensive civil engineering condition index.
         - **Repair Urgency:** Actionable schedule recommendations (Emergency Intervention, Priority Repair, Routine Monitoring).
         """)
+
+# =========================================================================
+# MODE 4: LIVE ROAD MAP & ROUTE PLANNER
+# =========================================================================
+else:
+    st.markdown("### 🗺️ Live Road Quality Map & Safe Route Planner")
+    st.markdown("Visualize actual surveyed roads with color-coded pavement ratings, inspect pothole hazard pins, and plan driving routes with road health safety advisories.")
+
+    # Top search & route selection container
+    with st.container():
+        st.subheader("🧭 Boarding & Destination Route Planning")
+        col_origin, col_dest = st.columns(2)
+        
+        with col_origin:
+            origin_query = st.text_input(
+                "🟢 Boarding Point (Origin):",
+                value="Connaught Place, New Delhi",
+                placeholder="Enter city, street, or landmark"
+            )
+        
+        with col_dest:
+            dest_query = st.text_input(
+                "🏁 Destination Point:",
+                value="India Gate, New Delhi",
+                placeholder="Enter city, street, or landmark"
+            )
+
+        col_presets, col_btn = st.columns([3, 1])
+        with col_presets:
+            st.caption("⚡ Quick Route Presets:")
+            preset_choice = st.radio(
+                "Popular Sample Corridors:",
+                options=[
+                    "Custom Input Above",
+                    "Delhi Central: Connaught Place ➔ India Gate",
+                    "Noida Corridor: Sector 18 ➔ Akshardham Temple",
+                    "South Expressway: AIIMS ➔ Cyber City"
+                ],
+                horizontal=True,
+                label_visibility="collapsed"
+            )
+            
+            if preset_choice == "Delhi Central: Connaught Place ➔ India Gate":
+                origin_query = "Connaught Place, New Delhi"
+                dest_query = "India Gate, New Delhi"
+            elif preset_choice == "Noida Corridor: Sector 18 ➔ Akshardham Temple":
+                origin_query = "Sector 18 Noida"
+                dest_query = "Akshardham Temple, New Delhi"
+            elif preset_choice == "South Expressway: AIIMS ➔ Cyber City":
+                origin_query = "AIIMS, New Delhi"
+                dest_query = "Cyber City, Gurugram"
+
+        with col_btn:
+            calc_route_btn = st.button("🚀 Calculate Safe Route", type="primary", use_container_width=True)
+
+    if calc_route_btn or st.session_state["active_route"] is None:
+        with st.spinner("Geocoding locations & calculating driving trajectory via OpenStreetMap / OSRM..."):
+            orig_res = map_service.geocode_location(origin_query)
+            dest_res = map_service.geocode_location(dest_query)
+
+            if orig_res and dest_res:
+                st.session_state["origin_info"] = {"lat": orig_res[0], "lon": orig_res[1], "address": orig_res[2]}
+                st.session_state["dest_info"] = {"lat": dest_res[0], "lon": dest_res[1], "address": dest_res[2]}
+                
+                route = map_service.get_osrm_route(orig_res[0], orig_res[1], dest_res[0], dest_res[1])
+                st.session_state["active_route"] = route
+            else:
+                st.error("Could not locate one or both addresses via OpenStreetMap geocoder. Please check your spelling or use a nearby landmark.")
+
+    # Display Route Advisory & Metrics if calculated
+    if st.session_state["active_route"] and st.session_state["origin_info"] and st.session_state["dest_info"]:
+        route = st.session_state["active_route"]
+        advisory = map_service.compute_route_road_health(route["coordinates"], st.session_state["map_roads"])
+
+        st.markdown("---")
+        mcol1, mcol2, mcol3, mcol4 = st.columns(4)
+        mcol1.metric("Driving Distance", f"{route['distance_km']} km")
+        mcol2.metric("Estimated Travel Time", f"{route['duration_min']} mins")
+        mcol3.metric("Route Pavement Health", f"{advisory['route_pci']}/100")
+        mcol4.metric("Safety Assessment", advisory["safety_status"])
+
+        if "High Hazard" in advisory["safety_status"]:
+            st.error(f"⚠️ **Road Safety Warning:** {advisory['advice']}")
+        elif "Moderate" in advisory["safety_status"]:
+            st.warning(f"🔔 **Road Condition Notice:** {advisory['advice']}")
+        else:
+            st.success(f"✅ **Route Pavement Clear:** {advisory['advice']}")
+
+        if advisory.get("surveyed_segments_hit"):
+            st.markdown("##### 📋 Previously Surveyed Road Corridors along this Route:")
+            survey_cols = st.columns(min(3, len(advisory["surveyed_segments_hit"])))
+            for s_i, seg in enumerate(advisory["surveyed_segments_hit"]):
+                with survey_cols[s_i % len(survey_cols)]:
+                    score_col = "#22C55E" if seg["health_score"] >= 70 else ("#EAB308" if seg["health_score"] >= 50 else "#EF4444")
+                    st.markdown(f"""
+                    <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px; margin-bottom: 8px;">
+                        <b style="color: #0F172A;">{seg['road_name']}</b><br>
+                        Pavement Health: <span style="font-weight: bold; color: {score_col};">{seg['health_score']}/100 ({seg['rating']})</span><br>
+                        <span style="font-size: 0.82rem; color: #64748B;">Potholes Reported: {seg['potholes_count']} | Survey Date: {seg['survey_date']}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+    # Build and Render Folium Map
+    st.markdown("---")
+    st.subheader("🗺️ Interactive Road Surface Quality Map")
+    
+    # Legend bar
+    st.markdown("""
+    <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: center; margin-bottom: 12px; font-size: 0.9rem;">
+        <div><b>Road Ratings:</b></div>
+        <div><span style="color: #22C55E; font-size: 1.2rem;">■</span> Excellent / Good (PCI ≥ 70)</div>
+        <div><span style="color: #EAB308; font-size: 1.2rem;">■</span> Fair (PCI 50–69)</div>
+        <div><span style="color: #EF4444; font-size: 1.2rem;">■</span> Critical / Severe (PCI < 50)</div>
+        <div><span style="color: #2563EB; font-size: 1.2rem;">━ ━</span> Planned Route</div>
+        <div><span style="color: red;">⚠️</span> Pothole Hazard Pin</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    map_obj = map_service.build_road_quality_map(
+        road_segments=st.session_state["map_roads"],
+        route_data=st.session_state["active_route"],
+        origin_info=st.session_state["origin_info"],
+        dest_info=st.session_state["dest_info"]
+    )
+
+    st_folium(map_obj, width="100%", height=560, returned_objects=[])
+
+    # Manage Roads on Map container
+    with st.expander("📍 Add / Register New Surveyed Road to Map"):
+        st.markdown("Add newly inspected roads or custom GPS road segments to the live OpenStreetMap network:")
+        acol1, acol2, acol3 = st.columns(3)
+        with acol1:
+            new_rname = st.text_input("Road Name:", value="", placeholder="e.g. Outer Ring Road Phase 2")
+        with acol2:
+            new_rscore = st.slider("Health Score (0-100):", min_value=0, max_value=100, value=75)
+        with acol3:
+            new_rurgency = st.selectbox("Maintenance Urgency:", ["Routine Monitoring", "Scheduled Repair (30 Days)", "Priority Repair (7 Days)", "Emergency Intervention"])
+
+        st.caption("Enter Start & End Coordinates or Location Names:")
+        gcol1, gcol2 = st.columns(2)
+        with gcol1:
+            start_loc_txt = st.text_input("Segment Start Point (Address or Lat, Lon):", value="", placeholder="e.g. 28.6300, 77.2200 or Connaught Place")
+        with gcol2:
+            end_loc_txt = st.text_input("Segment End Point (Address or Lat, Lon):", value="", placeholder="e.g. 28.6140, 77.2280 or India Gate")
+
+        if st.button("➕ Plot New Road on Live Map", type="secondary"):
+            if not new_rname.strip() or not start_loc_txt.strip() or not end_loc_txt.strip():
+                st.warning("Please provide a Road Name and both Start and End locations.")
+            else:
+                def parse_or_geocode(txt):
+                    if "," in txt and all(part.strip().replace(".", "").replace("-", "").isdigit() for part in txt.split(",")):
+                        parts = txt.split(",")
+                        return float(parts[0]), float(parts[1])
+                    res = map_service.geocode_location(txt)
+                    return (res[0], res[1]) if res else None
+
+                p_start = parse_or_geocode(start_loc_txt)
+                p_end = parse_or_geocode(end_loc_txt)
+
+                if p_start and p_end:
+                    r_color = "#22C55E" if new_rscore >= 70 else ("#EAB308" if new_rscore >= 50 else "#EF4444")
+                    r_rating = "Good" if new_rscore >= 70 else ("Fair (Moderate)" if new_rscore >= 50 else "Critical (Hazardous)")
+                    
+                    osrm_poly = map_service.get_osrm_route(p_start[0], p_start[1], p_end[0], p_end[1])
+                    coords = osrm_poly["coordinates"] if (osrm_poly and osrm_poly.get("coordinates")) else [[p_start[0], p_start[1]], [p_end[0], p_end[1]]]
+
+                    st.session_state["map_roads"].append({
+                        "road_name": new_rname,
+                        "rating": r_rating,
+                        "health_score": float(new_rscore),
+                        "color": r_color,
+                        "urgency": new_rurgency,
+                        "potholes_count": 0,
+                        "coordinates": coords,
+                        "potholes": []
+                    })
+                    st.success(f"✅ Successfully plotted '{new_rname}' with health rating {new_rscore}/100 on the live map!")
+                    st.rerun()
+                else:
+                    st.error("Could not parse coordinates or locate addresses. Please check format.")

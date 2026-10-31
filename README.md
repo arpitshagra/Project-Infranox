@@ -22,6 +22,11 @@ An intelligent computer vision system for road asset and road surface monitoring
   - **Dynamic Road Ranking Leaderboard:** Compare multiple roads, sort by worst-to-best or best-to-worst, view bar charts, and export the leaderboard CSV.
 - **Single & Batch Image Inspection:**
   - Upload road photos (`.jpg`, `.png`, `.jpeg`) to detect, count, and crop every individual pothole in the scene.
+- **Interactive OpenStreetMap & Route Navigation:**
+  - Color-coded road polylines displaying pavement ratings: 🟢 **Good/Excellent**, 🟡 **Fair**, and 🔴 **Critical/Severe**.
+  - Interactive pothole hazard pins with hover tooltips and metadata popups (ID, severity, confidence, damaged area).
+  - **Boarding & Destination Route Planner:** Enter origin & destination or select corridor presets. Uses free OpenStreetMap Nominatim geocoding and OSRM driving engine to plot the exact route with turn-by-turn driving trajectory, distance, duration, and pavement safety advisories.
+  - Layer switcher: Standard OpenStreetMap, Humanitarian Detail Map, and Esri Satellite Imagery.
 - **Interactive Streamlit Web Dashboard:**
   - Frame range trimming slider, adjustable frame skip (1x–10x), detection confidence slider, IoU threshold slider, and inference resolution options (640, 960, 1280).
   - Close-up cropped gallery of each detected pothole.

@@ -26,7 +26,7 @@ if not cap.isOpened():
 
 fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
 total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-tracker = RoadPotholeTracker(iou_thresh=0.25, max_dist=140, max_lost_frames=6, min_hits=1)
+tracker = RoadPotholeTracker(iou_thresh=0.15, max_dist=180, max_lost_frames=15, min_hits=3)
 
 print("\n--- Starting Infranox Road Pothole Detection & Profiling ---")
 frame_idx = 0
@@ -49,9 +49,9 @@ while cap.isOpened():
         xyxy = boxes.xyxy.cpu().numpy().tolist()
         confs = [round(float(c), 2) for c in boxes.conf.cpu().tolist()]
         
-        assigned_ids = tracker.update(xyxy, confs, frame, annotated_frame, frame_idx, timestamp_sec)
+        clean_dets, clean_confs, assigned_ids = tracker.update(xyxy, confs, frame, annotated_frame, frame_idx, timestamp_sec)
         
-        for box, tid, conf in zip(xyxy, assigned_ids, confs):
+        for box, tid, conf in zip(clean_dets, assigned_ids, clean_confs):
             if tid not in unique_detected_ids:
                 unique_detected_ids.add(tid)
                 bw = int(box[2] - box[0])
