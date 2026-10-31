@@ -1,0 +1,24 @@
+# Video files (DO NOT PUSH)
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.wmv
+*.flv
+
+# Python cache & virtualenvs
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# YOLO outputs & logs
+runs/
+*.log
+
+# Streamlit private credentials
+.streamlit/credentials.toml
