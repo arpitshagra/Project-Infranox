@@ -334,7 +334,24 @@ def compute_route_road_health(route_coords, road_segments):
     }
 
 
-def build_road_quality_map(road_segments, route_data=None, origin_info=None, dest_info=None, center_lat=28.6328, center_lon=77.2250, zoom=13):
+def reverse_geocode(lat, lon):
+    """
+    Convert clicked lat/lon coordinates back to a human-readable address using Nominatim.
+    Returns address string or coordinate string as fallback.
+    """
+    try:
+        geolocator = Nominatim(user_agent="infranox_road_community_monitor_v3", timeout=6)
+        loc = geolocator.reverse((lat, lon), language="en")
+        if loc and loc.address:
+            return loc.address
+    except Exception:
+        pass
+    return f"{lat:.5f}, {lon:.5f}"
+
+
+def build_road_quality_map(road_segments, route_data=None, origin_info=None, dest_info=None,
+                           click_origin=None, click_dest=None,
+                           center_lat=28.6328, center_lon=77.2250, zoom=13):
     """
     Generate an interactive Folium map with:
     - Color-coded road polylines by Health Rating
@@ -468,6 +485,24 @@ def build_road_quality_map(road_segments, route_data=None, origin_info=None, des
             tooltip=f"🏁 Destination: {dest_label}",
             popup=f"<b>Destination Point</b><br>{dest_label}"
         ).add_to(route_group)
+
+    # Click-to-pin temporary markers (shown before route is finalized)
+    if click_origin or click_dest:
+        click_group = folium.FeatureGroup(name="📍 Click Selection Pins").add_to(m)
+        if click_origin:
+            folium.Marker(
+                location=[click_origin["lat"], click_origin["lon"]],
+                icon=folium.Icon(color="green", icon="map-marker", prefix="fa"),
+                tooltip=f"🟢 Origin Pin: {click_origin.get('address', 'Boarding Point')}",
+                popup=f"<b>🟢 Boarding Point (Origin)</b><br>{click_origin.get('address', '')}"
+            ).add_to(click_group)
+        if click_dest:
+            folium.Marker(
+                location=[click_dest["lat"], click_dest["lon"]],
+                icon=folium.Icon(color="red", icon="flag", prefix="fa"),
+                tooltip=f"🏁 Destination Pin: {click_dest.get('address', 'Destination')}",
+                popup=f"<b>🏁 Destination Point</b><br>{click_dest.get('address', '')}"
+            ).add_to(click_group)
 
     folium.LayerControl(position="topright", collapsed=False).add_to(m)
     plugins.Fullscreen(position="topleft").add_to(m)

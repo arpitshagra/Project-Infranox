@@ -90,6 +90,22 @@ if "origin_info" not in st.session_state:
 if "dest_info" not in st.session_state:
     st.session_state["dest_info"] = None
 
+# Click-to-pin state for Route Planner (Mode 4)
+if "map_click_state" not in st.session_state:
+    st.session_state["map_click_state"] = "waiting_origin"  # "waiting_origin" | "waiting_dest" | "both_set"
+if "click_origin" not in st.session_state:
+    st.session_state["click_origin"] = None   # {"lat":..., "lon":..., "address":...}
+if "click_dest" not in st.session_state:
+    st.session_state["click_dest"] = None
+
+# Click-to-pin state for Video Survey mode (Mode 1)
+if "survey_click_state" not in st.session_state:
+    st.session_state["survey_click_state"] = "waiting_origin"
+if "survey_click_origin" not in st.session_state:
+    st.session_state["survey_click_origin"] = None
+if "survey_click_dest" not in st.session_state:
+    st.session_state["survey_click_dest"] = None
+
 # ----------------- Helper Functions -----------------
 @st.cache_resource
 def load_yolo_model(model_path="best.pt"):
@@ -359,21 +375,90 @@ elif media_mode == "Video Analysis & Road Ranking":
     with col_rname:
         custom_road_name = st.text_input("Road / Route Name:", value="", placeholder="e.g. NH-44 Expressway Sector 1")
 
-    # Mandatory survey start and end points for automated community road mapping
-    col_start, col_end = st.columns(2)
-    with col_start:
-        survey_start_point = st.text_input(
-            "📍 Survey Start Point (Boarding / Origin):",
-            value="Connaught Place, New Delhi",
-            placeholder="e.g. Connaught Place, New Delhi (or street/city)"
+    # ── Survey start/end — Click-to-Pin on map ────────────────────────────
+    st.markdown("#### 📍 Set Survey Start & End Points on Map")
+
+    s_state = st.session_state["survey_click_state"]
+    s_co    = st.session_state["survey_click_origin"]
+    s_cd    = st.session_state["survey_click_dest"]
+
+    # Status banner
+    if s_state == "waiting_origin":
+        st.info("🟢 **Step 1:** Click the map below to pin your **Survey Start Point (Origin)**.")
+    elif s_state == "waiting_dest":
+        st.info(f"🏁 **Step 2:** Click the map to pin your **Survey End Point (Destination)**.\n\n"
+                f"🟢 **Start set:** {s_co['address'] if s_co else ''}")
+    else:
+        st.success(
+            f"✅ **Survey route pinned!**  \n"
+            f"🟢 **Start:** {s_co['address'] if s_co else ''}  \n"
+            f"🏁 **End:** {s_cd['address'] if s_cd else ''}"
         )
-    with col_end:
-        survey_end_point = st.text_input(
-            "🏁 Survey End Point (Destination):",
-            value="India Gate, New Delhi",
-            placeholder="e.g. India Gate, New Delhi (or street/city)"
-        )
-    st.caption("ℹ️ Entering the Start & End points automatically plots this road corridor on the live OpenStreetMap network so other travelers can see the road score before traveling.")
+
+    s_reset_col, s_fallback_col = st.columns([1, 3])
+    with s_reset_col:
+        if st.button("🔄 Reset Survey Pins", key="reset_survey_pins", use_container_width=True):
+            st.session_state["survey_click_state"]  = "waiting_origin"
+            st.session_state["survey_click_origin"] = None
+            st.session_state["survey_click_dest"]   = None
+            st.rerun()
+
+    with s_fallback_col:
+        with st.expander("⌨️ Or type addresses manually"):
+            sf1, sf2 = st.columns(2)
+            sft_start = sf1.text_input("Start Point:", placeholder="e.g. Connaught Place, New Delhi", key="sft_start_txt")
+            sft_end   = sf2.text_input("End Point:",   placeholder="e.g. India Gate, New Delhi",      key="sft_end_txt")
+            if st.button("✅ Set Typed Points", key="sft_set_btn"):
+                with st.spinner("Geocoding..."):
+                    r1 = map_service.geocode_location(sft_start)
+                    r2 = map_service.geocode_location(sft_end)
+                if r1 and r2:
+                    st.session_state["survey_click_origin"] = {"lat": r1[0], "lon": r1[1], "address": r1[2]}
+                    st.session_state["survey_click_dest"]   = {"lat": r2[0], "lon": r2[1], "address": r2[2]}
+                    st.session_state["survey_click_state"]  = "both_set"
+                    st.rerun()
+                else:
+                    st.error("Could not geocode one or both addresses.")
+
+    # Build survey pin-picker mini-map
+    survey_pin_map = map_service.build_road_quality_map(
+        road_segments=[],
+        click_origin=s_co,
+        click_dest=s_cd,
+        zoom=11
+    )
+    survey_map_data = st_folium(survey_pin_map, width="100%", height=380,
+                                returned_objects=["last_clicked"], key="survey_pin_map")
+
+    if survey_map_data and survey_map_data.get("last_clicked"):
+        s_lat = survey_map_data["last_clicked"]["lat"]
+        s_lon = survey_map_data["last_clicked"]["lng"]
+        cur_s = st.session_state["survey_click_state"]
+        if cur_s == "waiting_origin":
+            with st.spinner("Reverse geocoding..."):
+                addr = map_service.reverse_geocode(s_lat, s_lon)
+            st.session_state["survey_click_origin"] = {"lat": s_lat, "lon": s_lon, "address": addr}
+            st.session_state["survey_click_state"]  = "waiting_dest"
+            st.rerun()
+        elif cur_s == "waiting_dest":
+            with st.spinner("Reverse geocoding..."):
+                addr = map_service.reverse_geocode(s_lat, s_lon)
+            st.session_state["survey_click_dest"]  = {"lat": s_lat, "lon": s_lon, "address": addr}
+            st.session_state["survey_click_state"] = "both_set"
+            st.rerun()
+        elif cur_s == "both_set":
+            # Third click resets origin
+            with st.spinner("Reverse geocoding new start..."):
+                addr = map_service.reverse_geocode(s_lat, s_lon)
+            st.session_state["survey_click_origin"] = {"lat": s_lat, "lon": s_lon, "address": addr}
+            st.session_state["survey_click_dest"]   = None
+            st.session_state["survey_click_state"]  = "waiting_dest"
+            st.rerun()
+
+    # Derive survey_start_point / survey_end_point for downstream pipeline
+    survey_start_point = s_co["address"] if s_co else "Connaught Place, New Delhi"
+    survey_end_point   = s_cd["address"] if s_cd else "India Gate, New Delhi"
+    st.caption("ℹ️ Click on the map above to set the road corridor. The Start & End points automatically plot this road on the live community map for future travelers.")
 
     active_video_path = None
     temp_file_path = None
@@ -940,74 +1025,64 @@ elif media_mode == "Road Ranking Leaderboard":
         """)
 
 # =========================================================================
-# MODE 4: LIVE ROAD MAP & ROUTE PLANNER
+# MODE 4: LIVE ROAD MAP & ROUTE PLANNER (Click-to-Pin)
 # =========================================================================
 else:
     st.markdown("### 🗺️ Live Road Quality Map & Safe Route Planner")
-    st.markdown("Visualize actual surveyed roads with color-coded pavement ratings, inspect pothole hazard pins, and plan driving routes with road health safety advisories.")
+    st.markdown("Visualize surveyed roads with color-coded pavement ratings, inspect pothole hazard pins, and plan routes by **clicking directly on the map**.")
 
-    # Top search & route selection container
-    with st.container():
-        st.subheader("🧭 Boarding & Destination Route Planning")
-        col_origin, col_dest = st.columns(2)
-        
-        with col_origin:
-            origin_query = st.text_input(
-                "🟢 Boarding Point (Origin):",
-                value="Connaught Place, New Delhi",
-                placeholder="Enter city, street, or landmark"
-            )
-        
-        with col_dest:
-            dest_query = st.text_input(
-                "🏁 Destination Point:",
-                value="India Gate, New Delhi",
-                placeholder="Enter city, street, or landmark"
-            )
+    # ── Click-to-pin status banner ──────────────────────────────────────
+    click_state = st.session_state["map_click_state"]
+    co = st.session_state["click_origin"]
+    cd = st.session_state["click_dest"]
 
-        col_presets, col_btn = st.columns([3, 1])
-        with col_presets:
-            st.caption("⚡ Quick Route Presets:")
-            preset_choice = st.radio(
-                "Popular Sample Corridors:",
-                options=[
-                    "Custom Input Above",
-                    "Delhi Central: Connaught Place ➔ India Gate",
-                    "Noida Corridor: Sector 18 ➔ Akshardham Temple",
-                    "South Expressway: AIIMS ➔ Cyber City"
-                ],
-                horizontal=True,
-                label_visibility="collapsed"
-            )
-            
-            if preset_choice == "Delhi Central: Connaught Place ➔ India Gate":
-                origin_query = "Connaught Place, New Delhi"
-                dest_query = "India Gate, New Delhi"
-            elif preset_choice == "Noida Corridor: Sector 18 ➔ Akshardham Temple":
-                origin_query = "Sector 18 Noida"
-                dest_query = "Akshardham Temple, New Delhi"
-            elif preset_choice == "South Expressway: AIIMS ➔ Cyber City":
-                origin_query = "AIIMS, New Delhi"
-                dest_query = "Cyber City, Gurugram"
+    if click_state == "waiting_origin":
+        st.info("🟢 **Step 1:** Click anywhere on the map below to set your **Boarding Point (Origin)**.")
+    elif click_state == "waiting_dest":
+        st.info(f"🏁 **Step 2:** Click on the map to set your **Destination**.\n\n"
+                f"🟢 **Boarding set:** {co['address'] if co else ''}")
+    else:
+        st.success(
+            f"✅ **Route set!**  \n"
+            f"🟢 **From:** {co['address'] if co else ''}  \n"
+            f"🏁 **To:** {cd['address'] if cd else ''}"
+        )
 
-        with col_btn:
-            calc_route_btn = st.button("🚀 Calculate Safe Route", type="primary", use_container_width=True)
+    # ── Reset button ─────────────────────────────────────────────────────
+    reset_col, fallback_col = st.columns([1, 3])
+    with reset_col:
+        if st.button("🔄 Reset & Choose New Route", use_container_width=True):
+            st.session_state["map_click_state"] = "waiting_origin"
+            st.session_state["click_origin"] = None
+            st.session_state["click_dest"] = None
+            st.session_state["active_route"] = None
+            st.session_state["origin_info"] = None
+            st.session_state["dest_info"] = None
+            st.rerun()
 
-    if calc_route_btn or st.session_state["active_route"] is None:
-        with st.spinner("Geocoding locations & calculating driving trajectory via OpenStreetMap / OSRM..."):
-            orig_res = map_service.geocode_location(origin_query)
-            dest_res = map_service.geocode_location(dest_query)
+    # ── Text-input fallback ──────────────────────────────────────────────
+    with fallback_col:
+        with st.expander("⌨️ Or type addresses instead (fallback)"):
+            fc1, fc2, fc3 = st.columns([2, 2, 1])
+            fallback_origin = fc1.text_input("Boarding Point:", placeholder="e.g. Connaught Place, Delhi", label_visibility="collapsed")
+            fallback_dest   = fc2.text_input("Destination:", placeholder="e.g. India Gate, Delhi", label_visibility="collapsed")
+            if fc3.button("🚀 Go", use_container_width=True):
+                with st.spinner("Geocoding..."):
+                    orig_res = map_service.geocode_location(fallback_origin)
+                    dest_res = map_service.geocode_location(fallback_dest)
+                if orig_res and dest_res:
+                    st.session_state["click_origin"] = {"lat": orig_res[0], "lon": orig_res[1], "address": orig_res[2]}
+                    st.session_state["click_dest"]   = {"lat": dest_res[0], "lon": dest_res[1], "address": dest_res[2]}
+                    st.session_state["origin_info"]  = st.session_state["click_origin"]
+                    st.session_state["dest_info"]    = st.session_state["click_dest"]
+                    route = map_service.get_osrm_route(orig_res[0], orig_res[1], dest_res[0], dest_res[1])
+                    st.session_state["active_route"] = route
+                    st.session_state["map_click_state"] = "both_set"
+                    st.rerun()
+                else:
+                    st.error("Could not geocode one or both addresses.")
 
-            if orig_res and dest_res:
-                st.session_state["origin_info"] = {"lat": orig_res[0], "lon": orig_res[1], "address": orig_res[2]}
-                st.session_state["dest_info"] = {"lat": dest_res[0], "lon": dest_res[1], "address": dest_res[2]}
-                
-                route = map_service.get_osrm_route(orig_res[0], orig_res[1], dest_res[0], dest_res[1])
-                st.session_state["active_route"] = route
-            else:
-                st.error("Could not locate one or both addresses via OpenStreetMap geocoder. Please check your spelling or use a nearby landmark.")
-
-    # Display Route Advisory & Metrics if calculated
+    # ── Route metrics strip (shown once route is ready) ──────────────────
     if st.session_state["active_route"] and st.session_state["origin_info"] and st.session_state["dest_info"]:
         route = st.session_state["active_route"]
         advisory = map_service.compute_route_road_health(route["coordinates"], st.session_state["map_roads"])
@@ -1040,32 +1115,77 @@ else:
                     </div>
                     """, unsafe_allow_html=True)
 
-    # Build and Render Folium Map
+    # ── Map Legend ────────────────────────────────────────────────────────
     st.markdown("---")
     st.subheader("🗺️ Interactive Road Surface Quality Map")
-    
-    # Legend bar
     st.markdown("""
     <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: center; margin-bottom: 12px; font-size: 0.9rem;">
         <div><b>Road Ratings:</b></div>
         <div><span style="color: #22C55E; font-size: 1.2rem;">■</span> Excellent / Good (PCI ≥ 70)</div>
         <div><span style="color: #EAB308; font-size: 1.2rem;">■</span> Fair (PCI 50–69)</div>
-        <div><span style="color: #EF4444; font-size: 1.2rem;">■</span> Critical / Severe (PCI < 50)</div>
+        <div><span style="color: #EF4444; font-size: 1.2rem;">■</span> Critical / Severe (PCI &lt; 50)</div>
         <div><span style="color: #2563EB; font-size: 1.2rem;">━ ━</span> Planned Route</div>
         <div><span style="color: red;">⚠️</span> Pothole Hazard Pin</div>
     </div>
+    <div style="background:#EFF6FF; border:1px solid #BFDBFE; border-radius:6px; padding:8px 14px; font-size:0.9rem; margin-bottom:10px;">
+        💡 <b>Click on the map</b> to drop pins — 1st click = 🟢 Origin, 2nd click = 🏁 Destination. Route auto-calculates!
+    </div>
     """, unsafe_allow_html=True)
 
+    # ── Build and render interactive Folium map ───────────────────────────
     map_obj = map_service.build_road_quality_map(
         road_segments=st.session_state["map_roads"],
         route_data=st.session_state["active_route"],
         origin_info=st.session_state["origin_info"],
-        dest_info=st.session_state["dest_info"]
+        dest_info=st.session_state["dest_info"],
+        click_origin=st.session_state["click_origin"] if click_state in ("waiting_dest",) else None,
+        click_dest=st.session_state["click_dest"] if click_state == "waiting_dest" else None,
     )
 
-    st_folium(map_obj, width="100%", height=560, returned_objects=[])
+    map_data = st_folium(map_obj, width="100%", height=580, returned_objects=["last_clicked"])
 
-    # Manage Roads on Map container
+    # ── Handle map click events ───────────────────────────────────────────
+    if map_data and map_data.get("last_clicked"):
+        clicked_lat = map_data["last_clicked"]["lat"]
+        clicked_lon = map_data["last_clicked"]["lng"]
+
+        current_state = st.session_state["map_click_state"]
+
+        if current_state == "waiting_origin":
+            with st.spinner("Reverse geocoding clicked location..."):
+                addr = map_service.reverse_geocode(clicked_lat, clicked_lon)
+            st.session_state["click_origin"] = {"lat": clicked_lat, "lon": clicked_lon, "address": addr}
+            st.session_state["map_click_state"] = "waiting_dest"
+            st.rerun()
+
+        elif current_state == "waiting_dest":
+            with st.spinner("Reverse geocoding & calculating route..."):
+                addr = map_service.reverse_geocode(clicked_lat, clicked_lon)
+                route = map_service.get_osrm_route(
+                    st.session_state["click_origin"]["lat"],
+                    st.session_state["click_origin"]["lon"],
+                    clicked_lat, clicked_lon
+                )
+            st.session_state["click_dest"]   = {"lat": clicked_lat, "lon": clicked_lon, "address": addr}
+            st.session_state["active_route"] = route
+            st.session_state["origin_info"]  = st.session_state["click_origin"]
+            st.session_state["dest_info"]    = st.session_state["click_dest"]
+            st.session_state["map_click_state"] = "both_set"
+            st.rerun()
+
+        elif current_state == "both_set":
+            # Third click resets to a new origin selection
+            with st.spinner("Reverse geocoding new origin..."):
+                addr = map_service.reverse_geocode(clicked_lat, clicked_lon)
+            st.session_state["click_origin"] = {"lat": clicked_lat, "lon": clicked_lon, "address": addr}
+            st.session_state["click_dest"]   = None
+            st.session_state["active_route"] = None
+            st.session_state["origin_info"]  = None
+            st.session_state["dest_info"]    = None
+            st.session_state["map_click_state"] = "waiting_dest"
+            st.rerun()
+
+    # ── Manage Roads on Map container ─────────────────────────────────────
     with st.expander("📍 Add / Register New Surveyed Road to Map"):
         st.markdown("Add newly inspected roads or custom GPS road segments to the live OpenStreetMap network:")
         acol1, acol2, acol3 = st.columns(3)
@@ -1100,7 +1220,7 @@ else:
                 if p_start and p_end:
                     r_color = "#22C55E" if new_rscore >= 70 else ("#EAB308" if new_rscore >= 50 else "#EF4444")
                     r_rating = "Good" if new_rscore >= 70 else ("Fair (Moderate)" if new_rscore >= 50 else "Critical (Hazardous)")
-                    
+
                     osrm_poly = map_service.get_osrm_route(p_start[0], p_start[1], p_end[0], p_end[1])
                     coords = osrm_poly["coordinates"] if (osrm_poly and osrm_poly.get("coordinates")) else [[p_start[0], p_start[1]], [p_end[0], p_end[1]]]
 
